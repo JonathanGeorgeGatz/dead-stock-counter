@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Dead Stock Counter</title>
+<style>
+:root{--ink:#1D2A2E;--dim:#5E7078;--line:#CBD8DC;--paper:#F2F6F7;--panel:#FFFFFF;--acc:#1F7A8C;--sig:#C77D3A;--warn:#A4312A;--ok:#2F6B4F;
+--mono:"SF Mono",Menlo,Consolas,monospace;--sans:-apple-system,"Segoe UI",Inter,Helvetica,Arial,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font:16px/1.5 var(--sans);padding:26px 30px 60px}
+h1{font-size:26px;letter-spacing:-.01em}
+h1 small{font-size:14px;color:var(--dim);font-weight:400;margin-left:10px}
+.sub{color:var(--dim);font-size:14px;margin:4px 0 16px}
+#banner{display:none;background:var(--warn);color:#fff;font-weight:800;font-size:19px;padding:12px 18px;border-radius:10px;margin:0 0 16px}
+.wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+textarea{width:100%;height:120px;font:12px/1.4 var(--mono);border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel);color:var(--ink)}
+label{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);display:block;margin-bottom:5px}
+.bar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:18px}
+.bar .f{display:flex;flex-direction:column;gap:5px}
+input[type=number]{font:15px var(--sans);padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);width:96px}
+button{font:15px/1 var(--sans);font-weight:700;padding:11px 20px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+.note{font-size:13px;color:var(--dim)}
+#fict{display:none;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--sig);border:1px solid var(--sig);border-radius:7px;padding:4px 10px}
+#asof{font-size:13px;color:var(--dim);margin:0 0 10px}
+#tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:6px 0 20px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.tile .k{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+.tile .v{font-size:29px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;padding:2px 0}
+.tile .s{font-size:12px;color:var(--dim);margin-top:3px}
+.tile.acc .v{color:var(--acc)} .tile.warn .v{color:var(--warn)} .tile.sig .v{color:var(--sig)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+section h2{font-size:17px;margin-bottom:4px}
+section .why{font-size:13px;color:var(--dim);margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);text-align:left;padding:5px 8px;border-bottom:2px solid var(--line)}
+td{padding:6px 8px;border-top:1px solid #E2EBEE;font-variant-numeric:tabular-nums;vertical-align:top}
+td.n,th.n{text-align:right}
+.chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.05em;border-radius:6px;padding:2px 7px;margin-left:6px;vertical-align:1px}
+.chip.never{color:#fff;background:var(--warn)}
+.chip.nullcover{color:#fff;background:var(--sig)}
+.chip.out{color:var(--dim);background:#E2EBEE}
+#recon{font:13.5px/1.7 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 20px}
+#recon .ok{color:var(--ok);font-weight:700} #recon .bad{color:var(--warn);font-weight:700}
+footer{margin-top:24px;font-size:12.5px;color:var(--dim)}
+@media (max-width:900px){#tiles{grid-template-columns:repeat(2,1fr)}.wrap{grid-template-columns:1fr}}
+</style></head><body>
+<h1>The Dead Stock Counter <small>the cash on your shelves that stopped being inventory</small></h1>
+<div class="sub">Everything runs in this page. Nothing you paste leaves your machine, and the page sells nothing for you — it counts, you decide. <span id="fict">fictional sample data</span></div>
+<div id="banner"></div>
+<div class="wrap">
+  <div><label>your inventory (CSV: SKU, Item, Category, On Hand, Unit Cost, Unit Price)</label><textarea id="icsv" spellcheck="false"></textarea></div>
+  <div><label>your sales (CSV: Date, SKU, Qty — a negative Qty is a return)</label><textarea id="scsv" spellcheck="false"></textarea></div>
+</div>
+<div class="bar">
+  <button id="sample">Load the sample shop</button>
+  <button id="go" class="primary">Count it</button>
+  <div class="f"><label for="s_dead">dead after (days)</label><input id="s_dead" type="number" value="90" min="7" step="1"></div>
+  <div class="f"><label for="s_slow">slow at (months of cover)</label><input id="s_slow" type="number" value="6" min="1" step="1"></div>
+  <div class="f"><label for="s_carry">carrying cost %/yr</label><input id="s_carry" type="number" value="25.0" min="0" step="0.1"></div>
+  <div class="f"><label for="s_md">markdown %</label><input id="s_md" type="number" value="30.0" min="0" max="90" step="0.1"></div>
+  <button id="dl">Download the count (CSV)</button>
+</div>
+<div id="out" style="display:none">
+<div id="asof"></div>
+<div id="tiles">
+  <div class="tile warn"><div class="k">Dead stock, at cost</div><div class="v" id="t_dead">—</div><div class="s" id="t_dead_s"></div></div>
+  <div class="tile sig"><div class="k">Share of the shelf</div><div class="v" id="t_pct">—</div><div class="s" id="t_pct_s"></div></div>
+  <div class="tile"><div class="k">Carrying it costs</div><div class="v" id="t_carry">—</div><div class="s" id="t_carry_s"></div></div>
+  <div class="tile acc"><div class="k">A markdown recovers</div><div class="v" id="t_rec">—</div><div class="s" id="t_rec_s"></div></div>
+</div>
+<section><h2>Dead stock, worst first</h2>
+<div class="why" id="deadwhy"></div>
+<table><thead><tr><th>SKU</th><th>Item</th><th class="n">On hand</th><th class="n">Cash at cost</th><th class="n">Last sale</th><th class="n">Quiet for</th></tr></thead><tbody id="deadT"></tbody></table></section>
+<section><h2>Slow movers</h2>
+<div class="why" id="slowwhy"></div>
+<table><thead><tr><th>SKU</th><th>Item</th><th class="n">On hand</th><th class="n">Cash at cost</th><th class="n">Sold, last 90 d</th><th class="n">Cover at this pace</th></tr></thead><tbody id="slowT"></tbody></table></section>
+<section><h2>Where the stuck cash sits</h2>
+<div class="why">Dead + slow cash by category, at cost.</div>
+<table><thead><tr><th>Category</th><th class="n">Stuck cash</th><th class="n">All stock, at cost</th><th class="n">SKUs</th></tr></thead><tbody id="catT"></tbody></table></section>
+<section><h2>The rest of the shelf</h2>
+<div class="why" id="restwhy"></div></section>
+<section><h2>Rows this page refused</h2>
+<div class="why">A row that can't be trusted is refused and listed with its reason — never silently swallowed.</div>
+<table><thead><tr><th>File</th><th class="n">Row</th><th>SKU</th><th>Reason</th></tr></thead><tbody id="refT"></tbody></table></section>
+<div id="recon"></div>
+</div>
+<footer>The Dead Stock Counter · built on "Build It With AI" · one file, no internet, no account. The sample shop (Foxglove Home &amp; Garden) is fictional.</footer>
+<script>// The Dead Stock Counter — final engine (Episode 33). All money in integer cents; dates as
+// integer serial days (civil-from-days); every division through halfUpDiv so two
+// implementations cannot drift. window.DS.count(invCsv, salesCsv, settings) -> report.
+(function (root) {
+  "use strict";
+  const DEF = { dead_days: 90, slow_months: 6, carry_tenths: 250, md_tenths: 300 };
+
+  function splitCsv(text) {
+    const rows = [];
+    let row = [], cell = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+        else cell += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === ",") { row.push(cell); cell = ""; }
+      else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+      else if (ch !== "\r") cell += ch;
+    }
+    if (cell.length || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(r => r.length > 1 || (r[0] || "").trim() !== "");
+  }
+
+  const halfUpDiv = (a, b) => Math.floor((2 * a + b) / (2 * b));
+  const pctTenths = (part, whole) => whole ? halfUpDiv(part * 1000, whole) : 0;
+
+  function cents(s) {
+    const m = /^\s*\$?\s*([0-9][0-9,]*)(?:\.([0-9]{1,2}))?\s*$/.exec(s || "");
+    if (!m) return null;
+    const frac = m[2] ? (m[2].length === 1 ? +m[2] * 10 : +m[2]) : 0;
+    return parseInt(m[1].replace(/,/g, ""), 10) * 100 + frac;
+  }
+  function wholeUnits(s) {
+    const m = /^\s*(-?)([0-9][0-9,]*)\s*$/.exec(s || "");
+    if (!m) return null;
+    const v = parseInt(m[2].replace(/,/g, ""), 10);
+    return m[1] === "-" ? -v : v;
+  }
+
+  const MLEN = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const leap = y => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  function daysFromCivil(y, m, d) {
+    y -= m <= 2 ? 1 : 0;
+    const era = Math.floor((y >= 0 ? y : y - 399) / 400);
+    const yoe = y - era * 400;
+    const doy = Math.floor((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1;
+    const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+    return era * 146097 + doe - 719468;
+  }
+  function civilFromDays(z) {
+    z += 719468;
+    const era = Math.floor((z >= 0 ? z : z - 146096) / 146097);
+    const doe = z - era * 146097;
+    const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+    const y = yoe + era * 400;
+    const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+    const mp = Math.floor((5 * doy + 2) / 153);
+    const d = doy - Math.floor((153 * mp + 2) / 5) + 1;
+    const m = mp + (mp < 10 ? 3 : -9);
+    return [y + (m <= 2 ? 1 : 0), m, d];
+  }
+  function parseDay(s) {
+    let y, mo, d;
+    let m = /^\s*(\d{4})-(\d{2})-(\d{2})\s*$/.exec(s || "");
+    if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else {
+      m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(s || "");
+      if (!m) return null;
+      mo = +m[1]; d = +m[2]; y = +m[3];
+    }
+    if (mo < 1 || mo > 12) return null;
+    const lim = (mo === 2 && leap(y)) ? 29 : MLEN[mo - 1];
+    if (d < 1 || d > lim) return null;
+    return daysFromCivil(y, mo, d);
+  }
+  const dayText = z => { const [y, m, d] = civilFromDays(z);
+    return String(y).padStart(4, "0") + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0"); };
+
+  const fmtT = t => Math.floor(t / 10) + "." + (t % 10);
+  const fmtMoney = c => (c < 0 ? "-$" : "$") + Math.abs(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function count(invCsv, salesCsv, settings) {
+    const S = Object.assign({}, DEF, settings || {});
+    const ir = splitCsv(invCsv), sr = splitCsv(salesCsv);
+    if (!ir.length || !sr.length) throw new Error("Paste both files (or load the sample shop).");
+    const ih = ir[0].map(s => s.trim().toLowerCase());
+    const sh = sr[0].map(s => s.trim().toLowerCase());
+    for (const n of ["sku", "item", "category", "on hand", "unit cost", "unit price"])
+      if (ih.indexOf(n) === -1) throw new Error("The inventory file is missing a “" + n + "” column.");
+    for (const n of ["date", "sku", "qty"])
+      if (sh.indexOf(n) === -1) throw new Error("The sales file is missing a “" + n + "” column.");
+    const ii = {}, si = {};
+    ih.forEach((n, k) => { if (!(n in ii)) ii[n] = k; });
+    sh.forEach((n, k) => { if (!(n in si)) si[n] = k; });
+
+    const refusedInv = [], refusedSales = [];
+    const kept = new Map();
+    let invRows = 0;
+    for (let r = 1; r < ir.length; r++) {
+      invRows++;
+      const row = ir[r], ln = r + 1;
+      const g = n => (row[ii[n]] || "").trim();
+      const sku = g("sku");
+      if (!sku) { refusedInv.push({ line: ln, sku: "(blank)", reason: "no SKU" }); continue; }
+      if (kept.has(sku)) { refusedInv.push({ line: ln, sku, reason: "duplicate SKU — the first row was kept" }); continue; }
+      const oh = wholeUnits(g("on hand"));
+      const uc = cents(g("unit cost"));
+      const up = cents(g("unit price"));
+      if (oh === null || oh < 0) { refusedInv.push({ line: ln, sku, reason: "on-hand unreadable: “" + g("on hand") + "”" }); continue; }
+      if (uc === null || uc < 1) { refusedInv.push({ line: ln, sku, reason: "no usable unit cost: “" + g("unit cost") + "”" }); continue; }
+      if (up === null || up < 1) { refusedInv.push({ line: ln, sku, reason: "unit price unreadable: “" + g("unit price") + "”" }); continue; }
+      kept.set(sku, { sku, item: g("item"), category: g("category"), onHand: oh, unitCost: uc, unitPrice: up });
+    }
+
+    const used = [];
+    let salesRows = 0;
+    for (let r = 1; r < sr.length; r++) {
+      salesRows++;
+      const row = sr[r], ln = r + 1;
+      const g = n => (row[si[n]] || "").trim();
+      const day = parseDay(g("date"));
+      const sku = g("sku");
+      const qty = wholeUnits(g("qty"));
+      if (day === null) { refusedSales.push({ line: ln, sku: sku || "(blank)", reason: "unreadable date: “" + g("date") + "”" }); continue; }
+      if (!kept.has(sku)) { refusedSales.push({ line: ln, sku: sku || "(blank)", reason: "SKU not in the inventory file" }); continue; }
+      if (qty === null || qty === 0) { refusedSales.push({ line: ln, sku, reason: "quantity unreadable or zero: “" + g("qty") + "”" }); continue; }
+      used.push([day, sku, qty]);
+    }
+    if (!used.length) throw new Error("No readable sales rows.");
+    let asOf = used[0][0];
+    for (const u of used) if (u[0] > asOf) asOf = u[0];
+
+    const lastSale = new Map(), win = new Map(), win2 = new Map();
+    for (const [day, sku, qty] of used) {
+      if (qty > 0 && (!lastSale.has(sku) || day > lastSale.get(sku))) lastSale.set(sku, day);
+      if (asOf - 90 < day && day <= asOf) win.set(sku, (win.get(sku) || 0) + qty);
+    }
+    for (let i = used.length - 1; i >= 0; i--) {
+      const [day, sku, qty] = used[i];
+      if (asOf - 90 < day && day <= asOf) win2.set(sku, (win2.get(sku) || 0) + qty);
+    }
+    let shadowOk = true;
+    for (const k of new Set([...win.keys(), ...win2.keys()]))
+      if ((win.get(k) || 0) !== (win2.get(k) || 0)) { shadowOk = false; break; }
+
+    const limit = S.slow_months * 30;
+    const skus = [];
+    for (const L of kept.values()) {
+      const u90 = Math.max(0, win.get(L.sku) || 0);
+      const ls = lastSale.has(L.sku) ? lastSale.get(L.sku) : null;
+      const daysSince = ls === null ? null : asOf - ls;
+      const cover = u90 > 0 ? halfUpDiv(L.onHand * 90, u90) : null;
+      const cash = L.onHand * L.unitCost;
+      const retail = L.onHand * L.unitPrice;
+      let cls;
+      if (L.onHand === 0) cls = "OUT";
+      else if (ls === null || daysSince >= S.dead_days) cls = "DEAD";
+      else if (cover === null || cover >= limit) cls = "SLOW";
+      else cls = "HEALTHY";
+      skus.push({ sku: L.sku, item: L.item, category: L.category, onHand: L.onHand,
+        unitCost: L.unitCost, unitPrice: L.unitPrice, cash, retail,
+        lastSaleText: ls === null ? null : dayText(ls), daysSince, units90: u90,
+        coverDays: cover, class: cls });
+    }
+    const korder = { DEAD: 0, SLOW: 1, HEALTHY: 2, OUT: 3 };
+    skus.sort((a, b) => {
+      if (korder[a.class] !== korder[b.class]) return korder[a.class] - korder[b.class];
+      if (a.class === "DEAD" && b.cash !== a.cash) return b.cash - a.cash;
+      if (a.class === "SLOW") {
+        const ai = a.coverDays === null ? 0 : 1, bi = b.coverDays === null ? 0 : 1;
+        if (ai !== bi) return ai - bi;
+        if (ai === 1 && b.coverDays !== a.coverDays) return b.coverDays - a.coverDays;
+      }
+      return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0;
+    });
+    const by = c => skus.filter(l => l.class === c);
+    const dead = by("DEAD"), slow = by("SLOW"), healthy = by("HEALTHY"), out = by("OUT");
+    const sum = (arr, f) => arr.reduce((s, l) => s + f(l), 0);
+    let totalCash = 0;
+    for (const L of kept.values()) totalCash += L.onHand * L.unitCost;
+    const deadCash = sum(dead, l => l.cash), slowCash = sum(slow, l => l.cash);
+    const healthyCash = sum(healthy, l => l.cash), outCash = sum(out, l => l.cash);
+    const deadRetail = sum(dead, l => l.retail);
+    const recoverNow = sum(dead, l => halfUpDiv(l.retail * (1000 - S.md_tenths), 1000));
+    const carryMonthly = halfUpDiv((deadCash + slowCash) * S.carry_tenths, 12000);
+    const carryMonthlyDead = halfUpDiv(deadCash * S.carry_tenths, 12000);
+
+    const counts = { invRows, salesRows, kept: kept.size, used: used.length,
+      dead: dead.length, slow: slow.length, healthy: healthy.length, out: out.length,
+      neverSold: dead.filter(l => l.lastSaleText === null).length,
+      refusedInv: refusedInv.length, refusedSales: refusedSales.length,
+      returns: used.filter(u => u[2] < 0).length };
+    const rowsTie = counts.kept + counts.refusedInv === invRows
+      && counts.dead + counts.slow + counts.healthy + counts.out === counts.kept;
+    const cashTie = totalCash === deadCash + slowCash + healthyCash + outCash;
+    const salesTie = counts.used + counts.refusedSales === salesRows;
+    const shInv = pctTenths(counts.refusedInv, invRows);
+    const shSales = pctTenths(counts.refusedSales, salesRows);
+    const shareOk = shInv <= 100 && shSales <= 100;
+    const trusted = rowsTie && cashTie && salesTie && shadowOk && shareOk;
+    let banner = "";
+    if (!trusted) {
+      banner = "DO NOT TRUST THIS COUNT — " + (!rowsTie ? "the row buckets do not tie."
+        : !cashTie ? "the cash self-audit does not tie."
+        : !salesTie ? "the sales rows do not tie."
+        : !shadowOk ? "the velocity shadow pass disagrees."
+        : "too many rows refused (inventory " + fmtT(shInv) + "%, sales " + fmtT(shSales) + "%). Fix the exports and run it again.");
+    }
+
+    const cats = new Map();
+    for (const L of kept.values()) {
+      const k = L.category.toLowerCase();
+      if (!cats.has(k)) cats.set(k, { category: L.category, tiedCash: 0, catCash: 0, skuCount: 0 });
+      const c = cats.get(k);
+      c.catCash += L.onHand * L.unitCost; c.skuCount++;
+    }
+    for (const l of dead.concat(slow)) cats.get(l.category.toLowerCase()).tiedCash += l.cash;
+    const categories = [...cats.values()].sort((a, b) => b.tiedCash - a.tiedCash
+      || (a.category.toLowerCase() < b.category.toLowerCase() ? -1 : a.category.toLowerCase() > b.category.toLowerCase() ? 1 : 0));
+
+    return {
+      settings: S, asOfDay: asOf, asOfText: dayText(asOf),
+      counts,
+      money: { totalCash, deadCash, slowCash, healthyCash, outCash, deadRetail, recoverNow,
+        carryMonthly, carryMonthlyDead, carrySix: 6 * carryMonthlyDead },
+      deadCashPct_tenths: pctTenths(deadCash, totalCash),
+      slowCashPct_tenths: pctTenths(slowCash, totalCash),
+      tiedPct_tenths: pctTenths(deadCash + slowCash, totalCash),
+      skus: skus.map(l => ({ sku: l.sku, item: l.item, category: l.category, onHand: l.onHand,
+        unitCost: l.unitCost, unitPrice: l.unitPrice, cash: l.cash, lastSaleText: l.lastSaleText,
+        daysSince: l.daysSince, units90: l.units90, coverDays: l.coverDays, class: l.class })),
+      categories,
+      refusedInv, refusedSales,
+      recon: { rowsTie, cashTie, salesTie, shadowOk, refusedShareInv_tenths: shInv,
+        refusedShareSales_tenths: shSales, trusted, banner },
+    };
+  }
+
+  root.DS = { count, _cents: cents, _wholeUnits: wholeUnits, _halfUpDiv: halfUpDiv,
+    _parseDay: parseDay, _dayText: dayText, _fmtT: fmtT, _fmtMoney: fmtMoney };
+})(typeof window !== "undefined" ? window : (typeof module !== "undefined" ? module.exports : this));
+</script>
+<script>
+const SAMPLE_I = "SKU,Item,Category,On Hand,Unit Cost,Unit Price\nFG-SOL18,Solar path light set of 6,Outdoor lighting,140,23.40,44.95\nFG-LANT-H,Holiday lantern pre-lit,Seasonal,55,16.80,32.00\nFG-PLNT-CB,Ceramic planter cobalt glaze 12 in,Planters,40,14.75,29.95\nFG-GNOME-L,Concrete garden gnome large,Garden decor,24,11.20,24.50\nFG-THROW-W,Wool throw blanket heather,Textiles,26,21.50,49.00\nFG-WREATH-F,Faux eucalyptus wreath 22 in,Seasonal,36,13.25,28.00\nFG-FOUNT-S,Tabletop fountain slate,Garden decor,14,38.60,79.95\nFG-ART-BOT,Botanical print set of 3,Wall art,15,12.40,26.00\nFG-FIREPIT,Steel fire bowl 30 in,Garden decor,11,64.00,129.00\nFG-CUSH-OD,Outdoor cushion set stripe,Textiles,34,17.25,36.00\nFG-ARBOR,Cedar garden arbor kit,Garden decor,6,112.00,229.00\nFG-TORCH-4,Citronella torch 4-pack,Outdoor lighting,42,9.80,19.95\nFG-MUG12,Stoneware mug 12 oz speckled,Kitchen & dining,20,6.40,14.00\nFG-VASE-AM,Amber glass vase 10 in,Home accents,28,9.75,21.00\nFG-CAND-PIL,Pillar candle trio sandalwood,Home accents,44,7.90,16.50\nFG-TRELL,Iron trellis panel,Garden decor,16,18.30,39.00\nFG-RUNNER,Table runner block print,Textiles,31,8.20,18.00\nFG-DOORMAT,Coir doormat fern,Textiles,25,7.60,16.00\nFG-CLOCHE,Glass cloche dome,Home accents,12,11.90,24.00\nFG-BASKET,Willow gathering basket,Home accents,10,15.40,34.00\nFG-SOAP-L,Lavender goat-milk soap,Home accents,150,3.90,9.50\nFG-TEA-TW,Garden tea towel set,Kitchen & dining,110,6.10,14.00\nFG-SEED,Pollinator seed kit,Garden decor,220,4.25,10.00\nFG-POT-T,Terracotta pot 8 in,Planters,320,3.60,8.50\nFG-SNIPS,Herb snips stainless,Garden decor,110,5.80,13.00\nFG-BIRD-F,Bird feeder lantern style,Outdoor lighting,120,14.90,29.95\nFG-CANDLE-S,Soy candle amber jar,Home accents,200,6.75,16.00\nFG-APRON,Linen apron natural,Kitchen & dining,80,11.30,26.00\nFG-MISTER,Brass plant mister,Planters,90,8.40,19.00\nFG-GLOVES,Leather garden gloves,Garden decor,150,7.20,17.00\nFG-CHIME,Wind chime walnut,Garden decor,80,13.60,29.00\nFG-COASTER,Cork coaster set,Kitchen & dining,150,3.10,8.00\nFG-PITCHER,Stoneware pitcher,Kitchen & dining,70,12.80,28.00\nFG-STRING,String lights 25 ft,Outdoor lighting,220,12.40,26.00\nFG-BULB-PW,Paperwhite bulb kit,Seasonal,200,4.60,12.00\nFG-PLNT-SM,Speckled stoneware planter 6 in,Planters,130,6.90,15.00\nFG-BISTRO,Bistro chair pair steel,Garden decor,20,54.00,119.00\nFG-UMBR,Market umbrella 9 ft,Outdoor lighting,16,61.00,129.00\nFG-TRUG,Garden trug oak,Garden decor,0,16.20,36.00\nFG-KIT-SUC,Succulent starter kit,Planters,0,9.30,22.00\nFG-SOAP-L,Lavender goat-milk soap (reorder),Home accents,24,3.90,9.50\nFG-MYST,Mystery grab bag,Seasonal,a few,2.00,6.00\nFG-HOOK,Cast-iron wall hook,Home accents,30,see invoice,9.00\n";
+const SAMPLE_S = "Date,SKU,Qty\n2025-11-15,FG-BIRD-F,9\n2025-11-15,FG-SOAP-L,10\n2025-11-15,FG-STRING,22\n2025-11-22,FG-BIRD-F,9\n2025-11-22,FG-CANDLE-S,14\n2025-11-22,FG-GLOVES,11\n2025-11-22,FG-LANT-H,3\n2025-11-22,FG-SOAP-L,10\n2025-11-22,FG-TEA-TW,7\n2025-11-29,FG-BIRD-F,9\n2025-11-29,FG-CANDLE-S,14\n2025-11-29,FG-GLOVES,11\n2025-11-29,FG-LANT-H,5\n2025-11-29,FG-POT-T,18\n2025-11-29,FG-SOAP-L,10\n2025-11-29,FG-STRING,22\n2025-11-29,FG-TEA-TW,7\n2025-12-06,FG-BIRD-F,9\n2025-12-06,FG-CANDLE-S,14\n2025-12-06,FG-GLOVES,11\n2025-12-06,FG-LANT-H,6\n2025-12-06,FG-POT-T,18\n2025-12-06,FG-SNIPS,7\n2025-12-06,FG-SOAP-L,10\n2025-12-06,FG-TEA-TW,7\n2025-12-13,FG-BIRD-F,9\n2025-12-13,FG-CANDLE-S,14\n2025-12-13,FG-COASTER,10\n2025-12-13,FG-GLOVES,11\n2025-12-13,FG-LANT-H,7\n2025-12-13,FG-POT-T,18\n2025-12-13,FG-SNIPS,7\n2025-12-13,FG-SOAP-L,10\n2025-12-13,FG-STRING,22\n2025-12-13,FG-TEA-TW,7\n2025-12-20,FG-BIRD-F,9\n2025-12-20,FG-CANDLE-S,14\n2025-12-20,FG-COASTER,10\n2025-12-20,FG-GLOVES,11\n2025-12-20,FG-LANT-H,8\n2026-07-04,FG-PUMPKIN,2\n2025-12-20,FG-PLNT-SM,8\n2025-12-20,FG-POT-T,18\n2025-12-20,FG-SNIPS,7\n2025-12-20,FG-SOAP-L,10\n2025-12-20,FG-TEA-TW,7\n2025-12-23,FG-LANT-H,4\n2025-12-27,FG-BIRD-F,9\n2025-12-27,FG-CANDLE-S,14\n2025-12-27,FG-COASTER,10\n2025-12-27,FG-GLOVES,11\n2025-12-27,FG-PLNT-SM,8\n2025-12-27,FG-POT-T,18\n2025-12-27,FG-SNIPS,7\n2025-12-27,FG-SOAP-L,10\n2025-12-27,FG-STRING,22\n2025-12-27,FG-TEA-TW,7\n2026-01-03,FG-BIRD-F,9\n2026-01-03,FG-CANDLE-S,14\n2026-01-03,FG-COASTER,10\n2026-01-03,FG-GLOVES,11\n2026-01-03,FG-LANT-H,1\n2026-01-03,FG-PLNT-SM,8\n2026-01-03,FG-POT-T,18\n2026-01-03,FG-SNIPS,7\n2026-01-03,FG-SOAP-L,10\n2026-01-03,FG-TEA-TW,7\n2026-01-10,FG-APRON,5\n2026-01-10,FG-BIRD-F,9\n2026-01-10,FG-CANDLE-S,14\n2026-01-10,FG-COASTER,10\n2026-01-10,FG-GLOVES,11\n2026-01-10,FG-PLNT-SM,8\n2026-01-10,FG-POT-T,18\n2026-01-10,FG-SNIPS,7\n2026-01-10,FG-SOAP-L,10\n2026-01-10,FG-STRING,22\n2026-01-10,FG-TEA-TW,7\n2026-01-10,FG-THROW-W,2\n2026-01-17,FG-APRON,5\n2026-01-17,FG-BIRD-F,9\n2026-01-17,FG-CANDLE-S,14\n2026-01-17,FG-COASTER,10\n2026-01-17,FG-GLOVES,11\n2026-01-17,FG-MISTER,6\n2026-01-17,FG-MUG12,2\n2026-01-17,FG-PLNT-SM,8\n2026-01-17,FG-POT-T,18\n2026-01-17,FG-SNIPS,7\n2026-01-17,FG-SOAP-L,10\n2026-01-17,FG-TEA-TW,7\n2026-01-24,FG-APRON,5\n2026-01-24,FG-BIRD-F,9\n2026-01-24,FG-CAND-PIL,2\n2026-01-24,FG-CANDLE-S,14\n2026-01-24,FG-COASTER,10\n2026-01-24,FG-GLOVES,11\n2026-01-24,FG-MISTER,6\n2026-01-24,FG-PLNT-SM,8\n2026-01-24,FG-POT-T,18\n2026-01-24,FG-SNIPS,7\n2026-01-24,FG-SOAP-L,10\n2026-01-24,FG-STRING,22\n2026-01-24,FG-TEA-TW,7\n2026-01-31,FG-APRON,5\n2026-01-31,FG-BIRD-F,9\n2026-01-31,FG-CANDLE-S,14\n2026-01-31,FG-COASTER,10\n2026-01-31,FG-GLOVES,11\n2026-01-31,FG-MISTER,6\n2026-01-31,FG-PLNT-SM,8\n2026-01-31,FG-POT-T,18\n2026-01-31,FG-SNIPS,7\n2026-01-31,FG-SOAP-L,10\n2026-01-31,FG-TEA-TW,7\n2026-02-07,FG-APRON,5\n2026-02-07,FG-BIRD-F,9\n2026-02-07,FG-CANDLE-S,14\n2026-02-07,FG-COASTER,10\n2026-02-07,FG-GLOVES,11\n2026-02-30,FG-SOAP-L,1\n2026-02-07,FG-MISTER,6\n2026-02-07,FG-PLNT-SM,8\n2026-02-07,FG-POT-T,18\n2026-02-07,FG-RUNNER,2\n2026-02-07,FG-SEED,14\n2026-02-07,FG-SNIPS,7\n2026-02-07,FG-SOAP-L,10\n2026-02-07,FG-STRING,22\n2026-02-07,FG-TEA-TW,7\n2026-02-14,FG-APRON,5\n2026-02-14,FG-BIRD-F,9\n2026-02-14,FG-CANDLE-S,14\n2026-02-14,FG-CHIME,5\n2026-02-14,FG-COASTER,10\n2026-02-14,FG-GLOVES,11\n2026-02-14,FG-MISTER,6\n2026-02-14,FG-PLNT-SM,8\n2026-02-14,FG-POT-T,18\n2026-02-14,FG-SEED,14\n2026-02-14,FG-SNIPS,7\n2026-02-14,FG-SOAP-L,10\n2026-02-14,FG-TEA-TW,7\n2026-02-14,FG-THROW-W,3\n2026-02-21,FG-APRON,5\n2026-02-21,FG-BIRD-F,9\n2026-02-21,FG-CANDLE-S,14\n2026-02-21,FG-CHIME,5\n2026-02-21,FG-COASTER,10\n2026-02-21,FG-GLOVES,11\n2026-02-21,FG-MISTER,6\n2026-02-21,FG-PLNT-SM,8\n2026-02-21,FG-POT-T,18\n2026-02-21,FG-SEED,14\n2026-02-21,FG-SNIPS,7\n2026-02-21,FG-SOAP-L,10\n2026-02-21,FG-STRING,22\n2026-02-21,FG-TEA-TW,7\n2026-02-21,FG-VASE-AM,1\n2026-02-28,FG-APRON,5\n2026-02-28,FG-BIRD-F,9\n2026-02-28,FG-CANDLE-S,14\n2026-02-28,FG-CHIME,5\n2026-02-28,FG-COASTER,10\n2026-02-28,FG-GLOVES,11\n2026-02-28,FG-MISTER,6\n2026-02-28,FG-PLNT-SM,8\n2026-02-28,FG-POT-T,18\n2026-02-28,FG-SEED,14\n2026-02-28,FG-SNIPS,7\n2026-02-28,FG-SOAP-L,10\n2026-02-28,FG-TEA-TW,7\n2026-03-07,FG-APRON,5\n2026-03-07,FG-BIRD-F,9\n2026-03-07,FG-CANDLE-S,14\n2026-03-07,FG-CHIME,5\n2026-03-07,FG-COASTER,10\n2026-03-07,FG-GLOVES,11\n2026-03-07,FG-MISTER,6\n2026-03-07,FG-MUG12,2\n2026-03-07,FG-PITCHER,5\n2026-03-07,FG-PLNT-SM,8\n2026-03-07,FG-POT-T,18\n2026-03-07,FG-SEED,14\n2026-03-07,FG-SNIPS,7\n2026-03-07,FG-SOAP-L,10\n2026-03-07,FG-STRING,22\n2026-03-07,FG-TEA-TW,7\n2026-03-07,FG-THROW-W,2\n2026-03-14,FG-APRON,5\n2026-03-14,FG-BIRD-F,9\n2026-03-14,FG-BISTRO,2\n2026-03-14,FG-CANDLE-S,14\n2026-03-14,FG-CHIME,5\n2026-03-14,FG-COASTER,10\n2026-03-14,FG-DOORMAT,2\n2026-03-14,FG-GLOVES,11\n2026-03-14,FG-MISTER,6\n2026-03-14,FG-PITCHER,5\n2026-03-14,FG-PLNT-SM,8\n2026-03-14,FG-POT-T,18\n2026-03-14,FG-SEED,14\n2026-03-14,FG-SNIPS,7\n2026-03-14,FG-SOAP-L,10\n2026-03-14,FG-TEA-TW,7\n2026-03-14,FG-WREATH-F,3\n2026-03-21,FG-APRON,5\n2026-03-21,FG-BIRD-F,9\n2026-03-21,FG-BISTRO,2\n2026-03-21,FG-CAND-PIL,3\n2026-03-21,FG-CANDLE-S,14\n2026-03-21,FG-CHIME,5\n2026-03-21,FG-COASTER,10\n2026-03-21,FG-FOUNT-S,1\n2026-03-21,FG-GLOVES,11\n2026-03-21,FG-MISTER,6\n2026-03-21,FG-PITCHER,5\n2026-03-21,FG-PLNT-SM,8\n2026-03-21,FG-POT-T,18\n2026-03-21,FG-SEED,14\n2026-03-21,FG-SNIPS,7\n2026-03-21,FG-SOAP-L,10\n2026-03-21,FG-STRING,22\n2026-03-21,FG-TEA-TW,7\n2026-03-21,FG-UMBR,2\n2026-03-28,FG-APRON,5\n2026-03-28,FG-ARBOR,1\n2026-03-28,FG-BIRD-F,9\n2026-03-28,FG-BISTRO,2\n2026-03-28,FG-CANDLE-S,14\n2026-03-28,FG-CHIME,5\n2026-03-28,FG-CLOCHE,1\n2026-03-28,FG-COASTER,10\n2026-03-28,FG-GLOVES,11\n2026-03-28,FG-MISTER,6\n2026-03-28,FG-PITCHER,5\n2026-03-28,FG-PLNT-SM,8\n2026-03-28,FG-POT-T,18\n2026-03-28,FG-SEED,14\n2026-03-28,FG-SNIPS,7\n2026-03-28,FG-SOAP-L,10\n2026-03-28,FG-TEA-TW,7\n2026-03-28,FG-UMBR,2\n2026-04-04,FG-APRON,5\n2026-04-04,FG-BIRD-F,9\n2026-04-04,FG-BISTRO,2\n2026-04-04,FG-CANDLE-S,14\n2026-04-04,FG-CHIME,5\n2026-04-04,FG-COASTER,10\n2026-04-04,FG-GLOVES,11\n2026-04-04,FG-MISTER,6\n2026-04-04,FG-PITCHER,5\n2026-04-04,FG-PLNT-SM,8\n2026-04-04,FG-POT-T,18\n2026-04-04,FG-SEED,14\n2026-04-04,FG-SNIPS,7\n2026-04-04,FG-SOAP-L,10\n2026-04-04,FG-SOL18,4\n2026-04-04,FG-STRING,22\n2026-04-04,FG-TEA-TW,7\n32/1/2026,FG-POT-T,2\n2026-04-04,FG-TRELL,2\n2026-04-04,FG-UMBR,2\n2026-04-04,FG-WREATH-F,2\n2026-04-11,FG-APRON,5\n2026-04-11,FG-BASKET,1\n2026-04-11,FG-BIRD-F,9\n2026-04-11,FG-BISTRO,2\n2026-04-11,FG-CANDLE-S,14\n2026-04-11,FG-CHIME,5\n2026-04-11,FG-COASTER,10\n2026-04-11,FG-FOUNT-S,1\n2026-04-11,FG-GLOVES,11\n2026-04-11,FG-MISTER,6\n2026-04-11,FG-PITCHER,5\n2026-04-11,FG-PLNT-SM,8\n2026-04-11,FG-POT-T,18\n2026-04-11,FG-SEED,14\n2026-04-11,FG-SNIPS,7\n2026-04-11,FG-SOAP-L,10\n2026-04-11,FG-SOL18,6\n2026-04-11,FG-TEA-TW,7\n2026-04-11,FG-UMBR,2\n2026-04-18,FG-APRON,5\n2026-04-18,FG-BIRD-F,9\n2026-04-18,FG-BISTRO,2\n2026-04-18,FG-CANDLE-S,14\n2026-04-18,FG-CHIME,5\n2026-04-18,FG-COASTER,10\n2026-04-18,FG-GLOVES,11\n2026-04-18,FG-MISTER,6\n2026-04-18,FG-PITCHER,5\n2026-04-18,FG-PLNT-SM,8\n2026-04-18,FG-POT-T,18\n2026-04-18,FG-SEED,14\n2026-04-18,FG-SNIPS,7\n2026-04-18,FG-SOAP-L,10\n2026-04-18,FG-SOL18,5\n2026-04-18,FG-STRING,22\n2026-04-18,FG-TEA-TW,7\n2026-04-18,FG-THROW-W,1\n2026-04-18,FG-UMBR,2\n2026-04-19,FG-ARBOR,1\n2026-04-25,FG-APRON,5\n2026-04-25,FG-BIRD-F,9\n2026-04-25,FG-BISTRO,2\n2026-04-25,FG-CANDLE-S,14\n2026-04-25,FG-CHIME,5\n2026-04-25,FG-COASTER,10\n2026-04-25,FG-FIREPIT,1\n2026-04-25,FG-GLOVES,11\n2026-04-25,FG-MISTER,6\n2026-04-25,FG-PITCHER,5\n2026-04-25,FG-PLNT-SM,8\n2026-04-25,FG-POT-T,18\n2026-04-25,FG-SEED,14\n2026-04-25,FG-SNIPS,7\n2026-04-25,FG-SOAP-L,10\n2026-04-25,FG-SOL18,7\n2026-04-25,FG-TEA-TW,7\n2026-04-25,FG-UMBR,2\n2026-04-25,FG-VASE-AM,2\n2026-05-02,FG-APRON,5\n2026-05-02,FG-ART-BOT,1\n2026-05-02,FG-BIRD-F,9\n2026-05-02,FG-BISTRO,2\n2026-05-02,FG-CANDLE-S,14\n2026-05-02,FG-CHIME,5\n2026-05-02,FG-COASTER,10\n2026-05-02,FG-GLOVES,11\n2026-05-02,FG-MISTER,6\n2026-05-02,FG-MUG12,3\n2026-05-02,FG-PITCHER,5\n2026-05-02,FG-PLNT-SM,8\n2026-05-02,FG-POT-T,18\n2026-05-02,FG-SEED,14\n2026-05-02,FG-SNIPS,7\n2026-05-02,FG-SOAP-L,10\n2026-05-02,FG-SOL18,6\n2026-05-02,FG-STRING,22\n2026-05-02,FG-TEA-TW,7\n2026-05-02,FG-UMBR,2\n2026-05-09,FG-APRON,5\n2026-05-09,FG-BIRD-F,9\n2026-05-09,FG-BISTRO,2\n2026-05-09,FG-CANDLE-S,14\n2026-05-09,FG-CHIME,5\n2026-05-09,FG-COASTER,10\n2026-05-09,FG-GLOVES,11\n2026-05-09,FG-MISTER,6\n2026-05-09,FG-PITCHER,5\n2026-05-09,FG-PLNT-SM,8\n2026-05-09,FG-POT-T,18\n2026-05-09,FG-RUNNER,2\n2026-05-09,FG-SEED,14\n2026-05-09,FG-SNIPS,7\n2026-05-09,FG-SOAP-L,10\n2026-05-09,FG-SOL18,5\n2026-05-09,FG-TEA-TW,7\n2026-05-09,FG-UMBR,2\n2026-05-09,FG-WREATH-F,2\n2026-05-11,FG-FOUNT-S,1\n2026-05-16,FG-APRON,5\n2026-05-16,FG-BIRD-F,9\n2026-05-16,FG-BISTRO,2\n2026-05-16,FG-CANDLE-S,14\n2026-05-16,FG-CHIME,5\n2026-05-16,FG-COASTER,10\n2026-05-16,FG-GLOVES,11\n2026-05-16,FG-MISTER,6\n2026-05-16,FG-PITCHER,5\n2026-05-16,FG-PLNT-SM,8\n2026-05-16,FG-POT-T,18\n2026-05-16,FG-SEED,14\n2026-05-16,FG-SNIPS,7\n2026-05-16,FG-SOAP-L,10\n2026-05-16,FG-SOL18,4\n2026-05-16,FG-STRING,22\n2026-05-16,FG-TEA-TW,7\n2026-05-16,FG-THROW-W,2\n2026-09-01,FG-STRING,0\n2026-05-16,FG-TORCH-4,3\n2026-05-16,FG-UMBR,2\n2026-05-23,FG-APRON,5\n2026-05-23,FG-BIRD-F,9\n2026-05-23,FG-BISTRO,2\n2026-05-23,FG-CANDLE-S,14\n2026-05-23,FG-CHIME,5\n2026-05-23,FG-CLOCHE,1\n2026-05-23,FG-COASTER,10\n2026-05-23,FG-CUSH-OD,2\n2026-05-23,FG-GLOVES,11\n2026-05-23,FG-MISTER,6\n2026-05-23,FG-PITCHER,5\n2026-05-23,FG-PLNT-SM,8\n2026-05-23,FG-POT-T,18\n2026-05-23,FG-SEED,14\n2026-05-23,FG-SNIPS,7\n2026-05-23,FG-SOAP-L,10\n2026-05-23,FG-SOL18,3\n2026-05-23,FG-TEA-TW,7\n2026-05-23,FG-UMBR,2\n2026-05-30,FG-APRON,5\n2026-05-30,FG-BIRD-F,9\n2026-05-30,FG-BISTRO,2\n2026-05-30,FG-CANDLE-S,14\n2026-05-30,FG-CHIME,5\n2026-05-30,FG-COASTER,10\n2026-05-30,FG-GLOVES,11\n2026-05-30,FG-MISTER,6\n2026-05-30,FG-PITCHER,5\n2026-05-30,FG-PLNT-SM,8\n2026-05-30,FG-POT-T,18\n2026-05-30,FG-SEED,14\n2026-05-30,FG-SNIPS,7\n2026-05-30,FG-SOAP-L,10\n2026-05-30,FG-SOL18,4\n2026-05-30,FG-STRING,22\n2026-05-30,FG-TEA-TW,7\n2026-05-30,FG-TRELL,1\n2026-05-30,FG-UMBR,2\n2026-06-02,FG-FIREPIT,1\n6/3/2026,FG-SEED,2\n2026-06-06,FG-APRON,5\n2026-06-06,FG-ART-BOT,2\n2026-06-06,FG-BIRD-F,9\n2026-06-06,FG-BISTRO,2\n2026-06-06,FG-CAND-PIL,2\n2026-06-06,FG-CANDLE-S,14\n2026-06-06,FG-CHIME,5\n2026-06-06,FG-COASTER,10\n2026-06-06,FG-GLOVES,11\n2026-06-06,FG-MISTER,6\n2026-06-06,FG-PITCHER,5\n2026-06-06,FG-PLNT-SM,8\n2026-06-06,FG-POT-T,18\n2026-06-06,FG-SEED,14\n2026-06-06,FG-SNIPS,7\n2026-06-06,FG-SOAP-L,10\n2026-06-06,FG-SOL18,3\n2026-06-06,FG-TEA-TW,7\n2026-06-06,FG-TORCH-4,4\n2026-06-06,FG-UMBR,2\n2026-06-13,FG-APRON,5\n2026-06-13,FG-BIRD-F,9\n2026-06-13,FG-BISTRO,2\n2026-06-13,FG-CANDLE-S,14\n2026-06-13,FG-CHIME,5\n2026-06-13,FG-COASTER,10\n2026-06-13,FG-DOORMAT,2\n2026-06-13,FG-GLOVES,11\n2026-06-13,FG-MISTER,6\n2026-06-13,FG-PITCHER,5\n2026-06-13,FG-PLNT-SM,8\n2026-06-13,FG-POT-T,18\n2026-06-13,FG-SEED,14\n2026-06-13,FG-SNIPS,7\n2026-06-13,FG-SOAP-L,10\n2026-06-13,FG-SOL18,2\n2026-06-13,FG-STRING,22\n2026-06-13,FG-TEA-TW,7\n2026-06-13,FG-UMBR,2\n2026-06-13,FG-WREATH-F,1\n2026-06-20,FG-APRON,5\n2026-06-20,FG-BASKET,1\n2026-06-20,FG-BIRD-F,9\n2026-06-20,FG-BISTRO,2\n2026-06-20,FG-CANDLE-S,14\n2026-06-20,FG-CHIME,5\n2026-06-20,FG-COASTER,10\n2026-06-20,FG-CUSH-OD,3\n2026-06-20,FG-GLOVES,11\n2026-06-20,FG-MISTER,6\n2026-06-20,FG-PITCHER,5\n2026-06-20,FG-PLNT-SM,8\n2026-06-20,FG-POT-T,18\n2026-06-20,FG-SEED,14\n2026-06-20,FG-SNIPS,7\n2026-06-20,FG-SOAP-L,10\n2026-06-20,FG-SOL18,2\n2026-06-20,FG-TEA-TW,7\n2026-06-20,FG-THROW-W,1\n2026-06-20,FG-UMBR,2\n2026-06-27,FG-APRON,5\n2026-06-27,FG-BIRD-F,9\n2026-06-27,FG-BISTRO,2\n2026-06-27,FG-CANDLE-S,14\n2026-06-27,FG-CHIME,5\n2026-06-27,FG-COASTER,10\n2026-06-27,FG-GLOVES,11\n2026-06-27,FG-MISTER,6\n2026-06-27,FG-PITCHER,5\n2026-06-27,FG-PLNT-SM,8\n2026-06-27,FG-POT-T,18\n2026-06-27,FG-SEED,14\n2026-06-27,FG-SNIPS,7\n2026-06-27,FG-SOAP-L,10\n2026-06-27,FG-SOL18,1\n2026-06-27,FG-STRING,22\n2026-06-27,FG-TEA-TW,7\n2026-06-27,FG-TORCH-4,3\n2026-06-27,FG-UMBR,2\n2026-06-27,FG-VASE-AM,1\n2026-07-04,FG-APRON,5\n2026-07-04,FG-BIRD-F,9\n2026-07-04,FG-BISTRO,2\n2026-07-04,FG-CANDLE-S,14\n2026-07-04,FG-CHIME,5\n2026-07-04,FG-COASTER,10\n2026-07-04,FG-GLOVES,11\n2026-07-04,FG-MISTER,6\n2026-07-04,FG-PITCHER,5\n2026-07-04,FG-PLNT-SM,8\n2026-07-04,FG-POT-T,18\n2026-07-04,FG-SEED,14\n2026-07-04,FG-SNIPS,7\n2026-07-04,FG-SOAP-L,10\n2026-07-04,FG-TEA-TW,7\n2026-07-04,FG-UMBR,2\n2026-07-08,FG-SOL18,1\n2026-07-11,FG-APRON,5\n2026-07-11,FG-BIRD-F,9\n2026-07-11,FG-BISTRO,2\n2026-07-11,FG-CANDLE-S,14\n2026-07-11,FG-CHIME,5\n2026-07-11,FG-COASTER,10\n2026-07-11,FG-CUSH-OD,2\n2026-07-11,FG-GLOVES,11\n2026-07-11,FG-MISTER,6\n2026-07-11,FG-MUG12,2\n2026-07-11,FG-PITCHER,5\n2026-07-11,FG-PLNT-SM,8\n2026-07-11,FG-POT-T,18\n2026-07-11,FG-SEED,14\n2026-07-11,FG-SNIPS,7\n2026-07-11,FG-SOAP-L,10\n2026-07-11,FG-STRING,22\n2026-07-11,FG-TEA-TW,7\n2026-07-11,FG-UMBR,2\n2026-07-18,FG-APRON,5\n2026-07-18,FG-BIRD-F,9\n2026-07-18,FG-BISTRO,2\n2026-07-18,FG-CANDLE-S,14\n2026-07-18,FG-CHIME,5\n2026-07-18,FG-COASTER,10\n2026-07-18,FG-GLOVES,11\n2026-07-18,FG-MISTER,6\n2026-07-18,FG-PITCHER,5\n2026-07-18,FG-PLNT-SM,8\n2026-07-18,FG-POT-T,18\n2026-07-18,FG-SEED,14\n2026-07-18,FG-SNIPS,7\n2026-07-18,FG-SOAP-L,10\n2026-07-18,FG-TEA-TW,7\n2026-07-18,FG-TORCH-4,2\n2026-07-18,FG-UMBR,2\n2026-07-25,FG-APRON,5\n2026-07-25,FG-BIRD-F,9\n2026-07-25,FG-BISTRO,2\n2026-07-25,FG-CANDLE-S,14\n2026-07-25,FG-CHIME,5\n2026-07-25,FG-COASTER,10\n2026-07-25,FG-GLOVES,11\n2026-07-25,FG-MISTER,6\n2026-07-25,FG-PITCHER,5\n2026-07-25,FG-PLNT-SM,8\n2026-07-25,FG-POT-T,18\n2026-07-25,FG-SEED,14\n2026-07-25,FG-SNIPS,7\n2026-07-25,FG-SOAP-L,10\n2026-07-25,FG-STRING,22\n2026-07-25,FG-TEA-TW,7\n2026-07-25,FG-UMBR,2\n2026-07-30,FG-ART-BOT,1\n2026-08-01,FG-APRON,5\n2026-08-01,FG-BIRD-F,9\n2026-08-01,FG-BISTRO,2\n2026-08-01,FG-CANDLE-S,14\n2026-08-01,FG-CHIME,5\n2026-08-01,FG-COASTER,10\n2026-08-01,FG-CUSH-OD,1\n2026-08-01,FG-GLOVES,11\n2026-08-01,FG-MISTER,6\n2026-08-01,FG-PITCHER,5\n2026-08-01,FG-PLNT-SM,8\n2026-08-01,FG-POT-T,18\n2026-08-01,FG-SEED,14\n2026-08-01,FG-SNIPS,7\n2026-08-01,FG-SOAP-L,10\n2026-08-01,FG-TEA-TW,7\n2026-08-01,FG-UMBR,2\n2026-08-08,FG-APRON,5\n2026-08-08,FG-BIRD-F,9\n2026-08-08,FG-BISTRO,2\n2026-08-08,FG-CANDLE-S,14\n2026-08-08,FG-CHIME,5\n2026-08-08,FG-COASTER,10\n2026-08-08,FG-GLOVES,11\n2026-08-08,FG-MISTER,6\n2026-08-08,FG-PITCHER,5\n2026-08-08,FG-PLNT-SM,8\n2026-08-08,FG-POT-T,18\n2026-08-08,FG-SEED,14\n2026-08-08,FG-SNIPS,7\n2026-08-08,FG-SOAP-L,10\n2026-08-08,FG-STRING,22\n2026-08-08,FG-TEA-TW,7\n2026-08-08,FG-UMBR,2\n2026-08-10,FG-TORCH-4,2\n2026-08-15,FG-APRON,5\n2026-08-15,FG-BIRD-F,9\n2026-08-15,FG-BISTRO,2\n2026-08-15,FG-CANDLE-S,14\n2026-08-15,FG-CHIME,5\n2026-08-15,FG-COASTER,10\n2026-08-15,FG-GLOVES,11\n2026-08-15,FG-MISTER,6\n2026-08-15,FG-PITCHER,5\n2026-08-15,FG-PLNT-SM,8\n2026-08-15,FG-POT-T,18\n2026-08-15,FG-SEED,14\n2026-08-15,FG-SNIPS,7\n2026-08-15,FG-SOAP-L,10\n2026-08-15,FG-TEA-TW,7\n2026-08-15,FG-UMBR,2\n2026-08-16,FG-WREATH-F,1\n2026-08-22,FG-APRON,5\n2026-08-22,FG-BIRD-F,9\n2026-08-22,FG-BISTRO,2\n2026-08-22,FG-CAND-PIL,3\n2026-08-22,FG-CANDLE-S,14\n2026-08-22,FG-CHIME,5\n2026-08-22,FG-COASTER,10\n2026-08-22,FG-GLOVES,11\n2026-08-22,FG-KIT-SUC,3\n2026-08-22,FG-MISTER,6\n2026-08-22,FG-MUG12,2\n2026-08-22,FG-PITCHER,5\n2026-08-22,FG-PLNT-SM,8\n2026-08-22,FG-POT-T,18\n2026-08-22,FG-RUNNER,2\n2026-08-22,FG-SEED,14\n2026-08-22,FG-SNIPS,7\n2026-08-22,FG-SOAP-L,10\n2026-08-22,FG-STRING,22\n2026-08-22,FG-TEA-TW,7\n2026-08-22,FG-UMBR,2\n2026-08-23,FG-BASKET,1\n2026-08-29,FG-APRON,5\n2026-08-29,FG-BIRD-F,9\n2026-08-29,FG-BISTRO,2\n2026-08-29,FG-CANDLE-S,14\n2026-08-29,FG-CHIME,5\n2026-08-29,FG-COASTER,10\n2026-08-29,FG-DOORMAT,2\n2026-08-29,FG-GLOVES,11\n2026-08-29,FG-MISTER,6\n2026-08-29,FG-PITCHER,5\n2026-08-29,FG-PLNT-SM,8\n2026-08-29,FG-POT-T,18\n2026-08-29,FG-SEED,14\n2026-08-29,FG-SNIPS,7\n2026-08-29,FG-SOAP-L,10\n2026-08-29,FG-TEA-TW,7\n2026-08-29,FG-TRELL,1\n2026-08-29,FG-UMBR,2\n2026-08-29,FG-VASE-AM,2\n2026-09-05,FG-APRON,5\n2026-09-05,FG-BASKET,1\n2026-09-05,FG-BIRD-F,9\n2026-09-05,FG-BISTRO,2\n2026-09-05,FG-CANDLE-S,14\n2026-09-05,FG-CHIME,5\n2026-09-05,FG-COASTER,10\n2026-09-05,FG-GLOVES,11\n2026-09-05,FG-KIT-SUC,4\n2026-09-05,FG-MISTER,6\n2026-09-05,FG-MUG12,2\n2026-09-05,FG-PITCHER,5\n2026-09-05,FG-PLNT-SM,8\n2026-09-05,FG-POT-T,18\n2026-09-05,FG-RUNNER,2\n2026-09-05,FG-SEED,14\n2026-09-05,FG-SNIPS,7\n2026-09-05,FG-SOAP-L,10\n2026-09-05,FG-STRING,22\n2026-09-05,FG-TEA-TW,7\n2026-09-05,FG-TRUG,2\n2026-09-05,FG-UMBR,2\n2026-09-12,FG-APRON,5\n2026-09-12,FG-BIRD-F,9\n2026-09-12,FG-BISTRO,2\n2026-09-12,FG-CAND-PIL,2\n2026-09-12,FG-CANDLE-S,14\n2026-09-12,FG-CHIME,5\n2026-09-12,FG-COASTER,10\n2026-09-12,FG-GLOVES,11\n2026-09-12,FG-MISTER,6\n2026-09-12,FG-MUG12,-2\n2026-09-12,FG-PITCHER,5\n2026-09-12,FG-PLNT-SM,8\n2026-09-12,FG-POT-T,18\n2026-09-12,FG-SEED,14\n2026-09-12,FG-SNIPS,7\n2026-09-12,FG-SOAP-L,10\n2026-09-12,FG-TEA-TW,7\n2026-09-12,FG-UMBR,2\n2026-09-19,FG-APRON,5\n2026-09-19,FG-BIRD-F,9\n2026-09-19,FG-BISTRO,2\n2026-09-19,FG-CANDLE-S,14\n2026-09-19,FG-CHIME,5\n2026-09-19,FG-COASTER,10\n2026-09-19,FG-DOORMAT,3\n2026-09-19,FG-GLOVES,11\n2026-09-19,FG-KIT-SUC,3\n2026-09-19,FG-MISTER,6\n2026-09-19,FG-MUG12,1\n2026-09-19,FG-PITCHER,5\n2026-09-19,FG-PLNT-SM,8\n2026-09-19,FG-POT-T,18\n2026-09-19,FG-SEED,14\n2026-09-19,FG-SNIPS,7\n2026-09-19,FG-SOAP-L,10\n2026-09-19,FG-STRING,22\n2026-09-19,FG-TEA-TW,7\n2026-09-19,FG-TRELL,2\n2026-09-19,FG-TRUG,3\n2026-09-19,FG-UMBR,2\n2026-09-26,FG-APRON,5\n2026-09-26,FG-BIRD-F,9\n2026-09-26,FG-BISTRO,2\n2026-09-26,FG-BULB-PW,15\n2026-09-26,FG-CANDLE-S,14\n2026-09-26,FG-CHIME,5\n2026-09-26,FG-COASTER,10\n2026-09-26,FG-GLOVES,11\n2026-09-26,FG-MISTER,6\n2026-09-26,FG-PITCHER,5\n2026-09-26,FG-PLNT-SM,8\n2026-09-26,FG-POT-T,18\n2026-09-26,FG-RUNNER,3\n2026-09-26,FG-SEED,14\n2026-09-26,FG-SNIPS,7\n2026-09-26,FG-SOAP-L,10\n2026-09-26,FG-TEA-TW,7\n2026-09-26,FG-UMBR,2\n2026-09-26,FG-VASE-AM,2\n2026-10-03,FG-APRON,5\n2026-10-03,FG-BIRD-F,9\n2026-10-03,FG-BISTRO,2\n2026-10-03,FG-BULB-PW,20\n2026-10-03,FG-CAND-PIL,3\n2026-10-03,FG-CANDLE-S,14\n2026-10-03,FG-CHIME,5\n2026-10-03,FG-COASTER,10\n2026-10-03,FG-GLOVES,11\n2026-10-03,FG-KIT-SUC,2\n2026-10-03,FG-MISTER,6\n2026-10-03,FG-MUG12,2\n2026-10-03,FG-PITCHER,5\n2026-10-03,FG-PLNT-SM,8\n2026-10-03,FG-POT-T,18\n2026-10-03,FG-SEED,14\n2026-10-03,FG-SNIPS,7\n2026-10-03,FG-SOAP-L,10\n2026-10-03,FG-STRING,22\n2026-10-03,FG-TEA-TW,7\n2026-10-03,FG-TRUG,2\n2026-10-03,FG-UMBR,2\n2026-10-10,FG-APRON,5\n2026-10-10,FG-BIRD-F,9\n2026-10-10,FG-BISTRO,2\n2026-10-10,FG-BULB-PW,22\n2026-10-10,FG-CANDLE-S,14\n2026-10-10,FG-CHIME,5\n2026-10-10,FG-COASTER,10\n2026-10-10,FG-GLOVES,11\n2026-10-10,FG-MISTER,6\n2026-10-10,FG-MUG12,-2\n2026-10-10,FG-PITCHER,5\n2026-10-10,FG-PLNT-SM,8\n2026-10-10,FG-POT-T,18\n2026-10-10,FG-RUNNER,2\n2026-10-10,FG-SEED,14\n2026-10-10,FG-SNIPS,7\n2026-10-10,FG-SOAP-L,10\n2026-10-10,FG-TEA-TW,7\n2026-10-10,FG-UMBR,2\n2026-10-17,FG-APRON,5\n2026-10-17,FG-BIRD-F,9\n2026-10-17,FG-BISTRO,2\n2026-10-17,FG-BULB-PW,18\n2026-10-17,FG-CANDLE-S,14\n2026-10-17,FG-CHIME,5\n2026-10-17,FG-COASTER,10\n2026-10-17,FG-DOORMAT,2\n2026-10-17,FG-GLOVES,11\n2026-10-17,FG-KIT-SUC,2\n2026-10-17,FG-MISTER,6\n2026-10-17,FG-MUG12,2\n2026-10-17,FG-PITCHER,5\n2026-10-17,FG-PLNT-SM,8\n2026-10-17,FG-POT-T,18\n2026-10-17,FG-SEED,14\n2026-10-17,FG-SNIPS,7\n2026-10-17,FG-SOAP-L,10\n2026-10-17,FG-STRING,22\n2026-10-17,FG-TEA-TW,7\n2026-10-17,FG-TRUG,1\n2026-10-17,FG-UMBR,2\n2026-10-20,FG-CLOCHE,1\n2026-10-24,FG-APRON,5\n2026-10-24,FG-BIRD-F,9\n2026-10-24,FG-BISTRO,2\n2026-10-24,FG-BULB-PW,25\n2026-10-24,FG-CAND-PIL,2\n2026-10-24,FG-CANDLE-S,14\n2026-10-24,FG-CHIME,5\n2026-10-24,FG-COASTER,10\n2026-10-24,FG-GLOVES,11\n2026-10-24,FG-MISTER,6\n2026-10-24,FG-PITCHER,5\n2026-10-24,FG-PLNT-SM,8\n2026-10-24,FG-POT-T,18\n2026-10-24,FG-RUNNER,2\n2026-10-24,FG-SEED,14\n2026-10-24,FG-SNIPS,7\n2026-10-24,FG-SOAP-L,10\n2026-10-24,FG-TEA-TW,7\n2026-10-24,FG-UMBR,2\n2026-10-24,FG-VASE-AM,1\n2026-10-29,FG-THROW-W,-1\n2026-10-31,FG-APRON,5\n2026-10-31,FG-BIRD-F,9\n2026-10-31,FG-BISTRO,2\n2026-10-31,FG-BULB-PW,20\n2026-10-31,FG-CANDLE-S,14\n2026-10-31,FG-CHIME,5\n2026-10-31,FG-COASTER,10\n2026-10-31,FG-GLOVES,11\n2026-10-31,FG-MISTER,6\n2026-10-31,FG-MUG12,1\n2026-10-31,FG-PITCHER,5\n2026-10-31,FG-PLNT-SM,8\n2026-10-31,FG-POT-T,18\n2026-10-31,FG-SEED,14\n2026-10-31,FG-SNIPS,7\n2026-10-31,FG-SOAP-L,10\n2026-10-31,FG-STRING,22\n2026-10-31,FG-TEA-TW,7\n2026-10-31,FG-TRELL,2\n2026-10-31,FG-UMBR,2\n2026-11-02,FG-CLOCHE,-1\n2026-11-03,FG-MUG12,-1\n2026-11-05,FG-DOORMAT,2\n2026-11-07,FG-APRON,5\n2026-11-07,FG-BIRD-F,9\n2026-11-07,FG-BISTRO,2\n2026-11-07,FG-BULB-PW,22\n2026-11-07,FG-CANDLE-S,14\n2026-11-07,FG-CHIME,5\n2026-11-07,FG-COASTER,10\n2026-11-07,FG-GLOVES,11\n2026-11-07,FG-MISTER,6\n2026-11-07,FG-PITCHER,5\n2026-11-07,FG-PLNT-SM,8\n2026-11-07,FG-POT-T,18\n2026-11-07,FG-RUNNER,2\n2026-11-07,FG-SEED,14\n2026-11-07,FG-SNIPS,7\n2026-11-07,FG-SOAP-L,10\n2026-11-07,FG-TEA-TW,7\n2026-11-07,FG-UMBR,2\n2026-11-07,FG-VASE-AM,1\n2026-11-10,FG-MUG12,2\n2026-11-12,FG-CAND-PIL,1\n2026-11-14,FG-SOAP-L,4\n";
+const $=id=>document.getElementById(id);
+const money=c=>(c<0?"-$":"$")+Math.abs(c/100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const pctT=t=>Math.floor(t/10)+"."+(t%10)+"%";
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+let LAST=null;
+function settings(){
+  const ct=Math.round((parseFloat($("s_carry").value)||0)*10);
+  const md=Math.round((parseFloat($("s_md").value)||0)*10);
+  return {dead_days:Math.max(1,Math.round(parseFloat($("s_dead").value)||90)),
+          slow_months:Math.max(1,Math.round(parseFloat($("s_slow").value)||6)),
+          carry_tenths:ct<0?0:ct, md_tenths:md<0?0:(md>900?900:md)};
+}
+function run(){
+  const i=$("icsv").value,s=$("scsv").value;
+  if(!i.trim()||!s.trim()){alert("Paste both files (or load the sample shop).");return;}
+  let R;
+  try{R=window.DS.count(i,s,settings());}catch(e){alert(e.message);return;}
+  LAST=R;
+  $("out").style.display="block";
+  const b=$("banner");
+  const show=R.recon.trusted;
+  if(!show){b.style.display="block";b.textContent=R.recon.banner;}
+  else b.style.display="none";
+  // the narrated behaviour IS the page's behaviour: an untrusted run shows the banner and nothing else
+  for(const id of ["asof","tiles"]) $(id).style.display=show?"":"none";
+  for(const el of document.querySelectorAll("section")) el.style.display=show?"":"none";
+  $("recon").style.display=show?"":"none";
+  if(!show){window.__done=true;return;}
+  $("asof").textContent="As of "+R.asOfText+" — the latest date in your sales file. This page has no clock of its own.";
+  $("t_dead").textContent=money(R.money.deadCash);
+  $("t_dead_s").textContent=R.counts.dead+" SKUs, "+R.counts.neverSold+" never sold once";
+  $("t_pct").textContent=pctT(R.deadCashPct_tenths);
+  $("t_pct_s").textContent="of "+money(R.money.totalCash)+" on the shelf · dead + slow = "+pctT(R.tiedPct_tenths);
+  $("t_carry").textContent=money(R.money.carryMonthly)+"/mo";
+  $("t_carry_s").textContent="on dead + slow cash at "+pctT(R.settings.carry_tenths).slice(0,-1)+"% a year · dead alone "+money(R.money.carryMonthlyDead)+"/mo";
+  $("t_rec").textContent=money(R.money.recoverNow);
+  $("t_rec_s").textContent="all dead stock at "+pctT(R.settings.md_tenths).slice(0,-1)+"% off its retail of "+money(R.money.deadRetail);
+  $("deadwhy").textContent="No sale in "+R.settings.dead_days+" days (returns are not sales). "+R.counts.dead+" SKUs holding "+money(R.money.deadCash)+" at cost.";
+  const deads=R.skus.filter(l=>l.class==="DEAD");
+  $("deadT").innerHTML=deads.map(l=>{
+    const chip=l.lastSaleText===null?' <span class="chip never">never sold</span>':"";
+    return `<tr><td>${esc(l.sku)}</td><td>${esc(l.item)}${chip}</td><td class="n">${l.onHand}</td><td class="n"><b>${money(l.cash)}</b></td><td class="n">${l.lastSaleText===null?"—":l.lastSaleText}</td><td class="n">${l.daysSince===null?"the whole file":l.daysSince+" days"}</td></tr>`;}).join("");
+  const slows=R.skus.filter(l=>l.class==="SLOW");
+  $("slowwhy").textContent="Still selling, but at the last-90-day pace the shelf holds "+R.settings.slow_months+"+ months of it. "+slows.length+" SKUs, "+money(R.money.slowCash)+" at cost.";
+  $("slowT").innerHTML=slows.map(l=>{
+    const cov=l.coverDays===null?'no measurable pace <span class="chip nullcover">net zero in 90 d</span>':l.coverDays+" days";
+    return `<tr><td>${esc(l.sku)}</td><td>${esc(l.item)}</td><td class="n">${l.onHand}</td><td class="n">${money(l.cash)}</td><td class="n">${l.units90}</td><td class="n">${cov}</td></tr>`;}).join("");
+  $("catT").innerHTML=R.categories.map(c=>`<tr><td>${esc(c.category)}</td><td class="n"><b>${money(c.tiedCash)}</b></td><td class="n">${money(c.catCash)}</td><td class="n">${c.skuCount}</td></tr>`).join("");
+  $("restwhy").textContent=R.counts.healthy+" SKUs are healthy ("+money(R.money.healthyCash)+" at cost, all under "+R.settings.slow_months+" months of cover) and "+R.counts.out+" are sold out — running out is a different failure, and a different tool's job. "+R.counts.returns+" returns were read as returns, not sales.";
+  const refRows=R.refusedInv.map(r=>`<tr><td>inventory.csv</td><td class="n">${r.line}</td><td>${esc(r.sku)}</td><td>${esc(r.reason)}</td></tr>`)
+    .concat(R.refusedSales.map(r=>`<tr><td>sales.csv</td><td class="n">${r.line}</td><td>${esc(r.sku)}</td><td>${esc(r.reason)}</td></tr>`));
+  $("refT").innerHTML=refRows.join("")||`<tr><td colspan="4" class="note">Nothing refused.</td></tr>`;
+  const rc=R.recon;
+  $("recon").innerHTML=
+   `self-audit, run every time\n`+
+   `rows    ${R.counts.invRows} inventory in = ${R.counts.dead} dead + ${R.counts.slow} slow + ${R.counts.healthy} healthy + ${R.counts.out} out + ${R.counts.refusedInv} refused  <span class="${rc.rowsTie?"ok":"bad"}">${rc.rowsTie?"ties":"DOES NOT TIE"}</span>\n`+
+   `cash    total at cost summed two ways, compared  <span class="${rc.cashTie?"ok":"bad"}">${rc.cashTie?"to the cent":"DOES NOT TIE"}</span>\n`+
+   `sales   ${R.counts.salesRows} rows in = ${R.counts.used} used + ${R.counts.refusedSales} refused  <span class="${rc.salesTie?"ok":"bad"}">${rc.salesTie?"ties":"DOES NOT TIE"}</span>\n`+
+   `pace    every SKU's 90-day units recomputed by a second route  <span class="${rc.shadowOk?"ok":"bad"}">${rc.shadowOk?"agrees":"DISAGREES"}</span>\n`+
+   `refused inventory ${(rc.refusedShareInv_tenths/10).toFixed(1)}% · sales ${(rc.refusedShareSales_tenths/10).toFixed(1)}%  <span class="${(rc.refusedShareInv_tenths<=100&&rc.refusedShareSales_tenths<=100)?"ok":"bad"}">${(rc.refusedShareInv_tenths<=100&&rc.refusedShareSales_tenths<=100)?"within tolerance":"over 10% — do not trust"}</span>`;
+  window.__done=true;
+}
+$("sample").addEventListener("click",()=>{$("icsv").value=SAMPLE_I;$("scsv").value=SAMPLE_S;$("fict").style.display="inline-block";window.__done=false;run();});
+$("go").addEventListener("click",()=>{window.__done=false;run();});
+for(const id of ["s_dead","s_slow","s_carry","s_md"]) $(id).addEventListener("change",()=>{if(LAST){window.__done=false;run();}});
+$("dl").addEventListener("click",()=>{
+  if(!LAST||!LAST.recon.trusted){alert("Count first (a run the page refuses to trust has nothing to download).");return;}
+  const rows=[["SKU","Item","Category","On hand","Cash at cost","Last sale","Days since","Sold last 90d","Cover days","Class"]].concat(
+    LAST.skus.map(l=>[l.sku,l.item,l.category,l.onHand,(l.cash/100).toFixed(2),l.lastSaleText||"never",l.daysSince==null?"":l.daysSince,l.units90,l.coverDays==null?"":l.coverDays,l.class]));
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const b=new Blob([csv],{type:"text/csv"});const u=URL.createObjectURL(b);
+  const a=document.createElement("a");a.href=u;a.download="dead_stock_count.csv";a.click();URL.revokeObjectURL(u);
+});
+window.__loaded=true;
+</script></body></html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Dead Stock Counter — the exact prompts</title>
+<style>
+body{background:#F2F6F7;color:#1D2A2E;font:16px/1.55 -apple-system,"Segoe UI",Inter,Helvetica,Arial,sans-serif;max-width:900px;margin:0 auto;padding:30px 20px 70px}
+h1{font-size:26px} .sub{color:#5E7078;font-size:14.5px;margin:6px 0 22px}
+section{background:#fff;border:1px solid #CBD8DC;border-radius:12px;padding:18px 20px;margin-bottom:18px}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}
+h2{font-size:17px}
+button{font:14px/1 inherit;font-weight:700;padding:10px 16px;border-radius:9px;border:1px solid #1F7A8C;background:#1F7A8C;color:#fff;cursor:pointer;white-space:nowrap}
+button.done{background:#2F6B4F;border-color:#2F6B4F}
+pre{white-space:pre-wrap;font:13px/1.5 "SF Mono",Menlo,Consolas,monospace;background:#EBF1F3;border:1px solid #D8E2E6;border-radius:9px;padding:12px 14px}
+a{color:#1F7A8C}
+</style></head><body>
+<h1>The Dead Stock Counter — the exact prompts</h1>
+<div class="sub">Word for word, as sent in the episode. Paste them into your AI assistant in order — prompts 2 and 3 exist because the first two versions were wrong in ways worth understanding. The tool itself: <a href="index.html">try it here</a> · <a href="Dead_Stock_Counter_BUNDLE.zip">download everything (zip)</a></div>
+<section><div class="head"><h2>Prompt 1 — build the whole counter</h2><button data-t="p1">Copy this prompt</button></div><pre id="p1">Build me a single HTML file I can open in my browser, no internet, no account, that tells me
+which of my products have stopped selling and how much money is sitting in them.
+
+What it&#x27;s for: I run a small retail shop. I can export my inventory (SKU, item, category,
+units on hand, unit cost, unit price) and my sales (date, SKU, quantity). I want to know what
+on my shelves is dead weight, and what it&#x27;s worth.
+
+Data in: two pastes.
+1) The inventory: CSV with columns SKU, Item, Category, On Hand, Unit Cost, Unit Price.
+2) The sales: CSV with columns Date, SKU, Qty.
+
+What I want out: the products that aren&#x27;t selling, how long each has been quiet, what the pile
+is worth, and the share of my shelf that&#x27;s stuck. Show the numbers per product, worst first —
+I want a list I can walk the shop with, not just a total.</pre></section>
+<section><div class="head"><h2>Prompt 2 — fix the frame</h2><button data-t="p2">Copy this prompt</button></div><pre id="p2">The first version has the frame wrong, three ways.
+
+- It values my stock at RETAIL price and calls that &quot;cash tied up.&quot; The cash I buried in a
+  shelf is what I PAID for it. Value everything at unit cost; keep retail only for deciding
+  what a markdown would recover.
+- It starts from the sales file, so a product that has NEVER sold a single unit — the deadest
+  stock I own — never appears anywhere. Start from the INVENTORY file. Every SKU I hold gets a
+  verdict: DEAD, SLOW, HEALTHY, or OUT (sold out, zero on hand — different problem, count it
+  but leave it out of the money).
+- Its idea of pace is a lifetime average over the whole file, so a product that sold hard in
+  spring still looks alive in November. Measure pace in the LAST 90 DAYS only: units sold in
+  the window, and months of cover = on hand divided by that pace. DEAD means no sale in 90
+  days. SLOW means it sells, but the shelf holds six-plus months of it at the current pace.
+- &quot;Today&quot; is whatever the newest date in my sales file is — the page must not have a clock of
+  its own, or the same files would give different answers on different days.</pre></section>
+<section><div class="head"><h2>Prompt 3 — make it trustworthy</h2><button data-t="p3">Copy this prompt</button></div><pre id="p3">Now make it trustworthy enough to decide a markdown with.
+
+- All money arithmetic in whole integer cents with one written-down rounding rule (round half
+  up). Dates become integer day numbers through one written-down calendar routine — real month
+  lengths, real leap years — never a language date parser near the math.
+- RETURNS, defined exactly: a negative quantity is a return. A return is NOT a sale — it never
+  refreshes a product&#x27;s last-sale date — and it SUBTRACTS from the 90-day pace. A product
+  whose only recent activity is a return is still dead.
+- Refuse what you can&#x27;t read, out loud: a date the calendar can&#x27;t produce, a quantity that
+  isn&#x27;t a whole number, a duplicate SKU, a sales row whose SKU isn&#x27;t in my inventory file.
+  Each refusal printed with its row and the reason. Never guess, never silently skip.
+- Four settings, because those are four business judgments, not constants: how many quiet days
+  is dead; how many months of cover is slow; my carrying-cost rate per year; the markdown to
+  price a clear-out with. Each one must visibly change the page.
+- The page audits itself on every run: inventory rows in = dead + slow + healthy + out +
+  refused; total cash summed two independent ways and compared to the cent; sales rows in =
+  used + refused; every product&#x27;s 90-day pace recomputed by a second route and compared. If an
+  audit fails, or more than ten percent of either file is refused, print DO NOT TRUST THIS
+  COUNT across the top and show nothing else — no tiles, no lists, no numbers to misread.</pre></section>
+
+<script>
+for(const b of document.querySelectorAll('button[data-t]')) b.addEventListener('click',()=>{
+  const ta=document.createElement('textarea');ta.value=document.getElementById(b.dataset.t).textContent;document.body.appendChild(ta);ta.select();
+  try{document.execCommand('copy')}catch(e){}
+  document.body.removeChild(ta);b.textContent='Copied';b.classList.add('done');
+  setTimeout(()=>{b.textContent='Copy this prompt';b.classList.remove('done')},3000);
+});
+</script></body></html>
